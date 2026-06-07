@@ -2,48 +2,115 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+const CURRENCY = "$";
 
 function fmt(n) {
-  return Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const value = Number(n) || 0;
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
-function fmtInt(n) { return Math.round(n).toLocaleString("en-US"); }
-function fmtCurrency(n) { return "$" + fmt(n); }
 
-function unique(arr) { return [...new Set(arr.filter(Boolean))].sort(); }
+function fmtInt(n) {
+  return Math.round(Number(n) || 0).toLocaleString("en-US");
+}
+
+function fmtCurrency(n) {
+  return `${CURRENCY}${fmt(n)}`;
+}
+
+function unique(arr) {
+  return [...new Set(arr.filter(Boolean))].sort();
+}
+
+function normalizeStatus(status) {
+  return (status || "").toLowerCase().trim();
+}
 
 function StatusBadge({ status }) {
-  const s = (status || "").toLowerCase();
+  const s = normalizeStatus(status).replace(/\s+/g, "-") || "unknown";
   return (
-    <span className={`badge ${s}`}>
-      <span className="badge-dot" />
+    <span className={`status-badge ${s}`}>
+      <span className="status-dot" />
       {status || "—"}
     </span>
   );
 }
 
-// ─── Main Page ───────────────────────────────────────────────────────────────
+function MetricCard({ label, value, detail, tone = "green", icon, progress }) {
+  return (
+    <article className={`metric-card ${tone}`}>
+      <div className="metric-card-top">
+        <span className="metric-icon">{icon}</span>
+        {typeof progress === "number" && (
+          <span className="metric-percent">{Math.max(0, Math.min(100, progress))}%</span>
+        )}
+      </div>
+      <p className="metric-label">{label}</p>
+      <h2>{value}</h2>
+      <div className="metric-footer">
+        <span>{detail}</span>
+        {typeof progress === "number" && (
+          <div className="mini-progress" aria-hidden="true">
+            <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function SelectFilter({ label, value, onChange, options, placeholder }) {
+  return (
+    <label className="filter-field">
+      <span>{label}</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{placeholder}</option>
+        {options.map((item) => (
+          <option key={item} value={item}>{item}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function TextFilter({ label, value, onChange, placeholder, type = "text" }) {
+  return (
+    <label className="filter-field compact">
+      <span>{label}</span>
+      <input
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
+function EmptyChart({ message }) {
+  return <div className="empty-chart">{message}</div>;
+}
 
 export default function Dashboard() {
-  const [rows, setRows]           = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState(null);
-  const [lastSync, setLastSync]   = useState(null);
-  const [sortKey, setSortKey]     = useState("date");
-  const [sortDir, setSortDir]     = useState("desc");
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [lastSync, setLastSync] = useState(null);
+  const [sortKey, setSortKey] = useState("date");
+  const [sortDir, setSortDir] = useState("desc");
 
-  // Filters
-  const [fProduct,    setFProduct]    = useState("");
-  const [fCategory,   setFCategory]   = useState("");
-  const [fPackaging,  setFPackaging]  = useState("");
-  const [fStatus,     setFStatus]     = useState("");
-  const [fDateFrom,   setFDateFrom]   = useState("");
-  const [fDateTo,     setFDateTo]     = useState("");
-  const [fPriceMin,   setFPriceMin]   = useState("");
-  const [fPriceMax,   setFPriceMax]   = useState("");
-  const [fQtyMin,     setFQtyMin]     = useState("");
+  const [fProduct, setFProduct] = useState("");
+  const [fCategory, setFCategory] = useState("");
+  const [fPackaging, setFPackaging] = useState("");
+  const [fStatus, setFStatus] = useState("");
+  const [fDateFrom, setFDateFrom] = useState("");
+  const [fDateTo, setFDateTo] = useState("");
+  const [fPriceMin, setFPriceMin] = useState("");
+  const [fPriceMax, setFPriceMax] = useState("");
+  const [fQtyMin, setFQtyMin] = useState("");
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -60,68 +127,68 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Initial load + auto-refresh every 60 seconds
   useEffect(() => {
     fetchData();
     const id = setInterval(fetchData, 60_000);
     return () => clearInterval(id);
   }, [fetchData]);
 
-  // ── Filter options (derived from data) ────────────────────────────────────
-  const products   = useMemo(() => unique(rows.map(r => r.product)),   [rows]);
-  const categories = useMemo(() => unique(rows.map(r => r.category)),  [rows]);
-  const packagings = useMemo(() => unique(rows.map(r => r.packaging)), [rows]);
-  const statuses   = useMemo(() => unique(rows.map(r => r.status)),    [rows]);
+  const products = useMemo(() => unique(rows.map((r) => r.product)), [rows]);
+  const categories = useMemo(() => unique(rows.map((r) => r.category)), [rows]);
+  const packagings = useMemo(() => unique(rows.map((r) => r.packaging)), [rows]);
+  const statuses = useMemo(() => unique(rows.map((r) => r.status)), [rows]);
 
-  // ── Filtered rows ─────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
-    return rows.filter(r => {
-      if (fProduct   && r.product   !== fProduct)   return false;
-      if (fCategory  && r.category  !== fCategory)  return false;
+    return rows.filter((r) => {
+      if (fProduct && r.product !== fProduct) return false;
+      if (fCategory && r.category !== fCategory) return false;
       if (fPackaging && r.packaging !== fPackaging) return false;
-      if (fStatus    && r.status    !== fStatus)    return false;
-      if (fDateFrom  && r.date < fDateFrom)         return false;
-      if (fDateTo    && r.date > fDateTo)           return false;
+      if (fStatus && r.status !== fStatus) return false;
+      if (fDateFrom && r.date < fDateFrom) return false;
+      if (fDateTo && r.date > fDateTo) return false;
+
       const price = parseFloat(r.unit_price) || 0;
-      if (fPriceMin  && price < parseFloat(fPriceMin)) return false;
-      if (fPriceMax  && price > parseFloat(fPriceMax)) return false;
+      if (fPriceMin && price < parseFloat(fPriceMin)) return false;
+      if (fPriceMax && price > parseFloat(fPriceMax)) return false;
+
       const qty = parseInt(r.quantity) || 0;
-      if (fQtyMin    && qty < parseInt(fQtyMin))    return false;
+      if (fQtyMin && qty < parseInt(fQtyMin)) return false;
+
       return true;
     });
   }, [rows, fProduct, fCategory, fPackaging, fStatus, fDateFrom, fDateTo, fPriceMin, fPriceMax, fQtyMin]);
 
-  // ── Sorted rows ───────────────────────────────────────────────────────────
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
       let av = a[sortKey] ?? "";
       let bv = b[sortKey] ?? "";
-      const numCols = ["quantity","unit_price","total"];
+      const numCols = ["quantity", "unit_price", "total"];
+
       if (numCols.includes(sortKey)) {
         av = parseFloat(av) || 0;
         bv = parseFloat(bv) || 0;
       }
+
       if (av < bv) return sortDir === "asc" ? -1 : 1;
-      if (av > bv) return sortDir === "asc" ? 1  : -1;
+      if (av > bv) return sortDir === "asc" ? 1 : -1;
       return 0;
     });
   }, [filtered, sortKey, sortDir]);
 
-  // ── Metrics ───────────────────────────────────────────────────────────────
-  const totalRevenue  = useMemo(() => filtered.reduce((s,r) => s + (parseFloat(r.total)      || 0), 0), [filtered]);
-  const totalUnits    = useMemo(() => filtered.reduce((s,r) => s + (parseInt(r.quantity)     || 0), 0), [filtered]);
-  const totalOrders   = filtered.length;
+  const totalRevenue = useMemo(() => filtered.reduce((s, r) => s + (parseFloat(r.total) || 0), 0), [filtered]);
+  const totalUnits = useMemo(() => filtered.reduce((s, r) => s + (parseInt(r.quantity) || 0), 0), [filtered]);
+  const totalOrders = filtered.length;
   const avgOrderValue = totalOrders ? totalRevenue / totalOrders : 0;
-  const fulfilledPct  = totalOrders
-    ? Math.round((filtered.filter(r => r.status === "Fulfilled").length / totalOrders) * 100)
-    : 0;
+  const fulfilledCount = filtered.filter((r) => normalizeStatus(r.status) === "fulfilled").length;
+  const pendingCount = filtered.filter((r) => normalizeStatus(r.status) === "pending").length;
+  const cancelledCount = filtered.filter((r) => normalizeStatus(r.status) === "cancelled").length;
+  const fulfilledPct = totalOrders ? Math.round((fulfilledCount / totalOrders) * 100) : 0;
 
-  // ── Revenue by product (for bar chart) ────────────────────────────────────
   const revenueByProduct = useMemo(() => {
     const map = {};
-    filtered.forEach(r => {
-      const k = r.product || "Unknown";
-      map[k] = (map[k] || 0) + (parseFloat(r.total) || 0);
+    filtered.forEach((r) => {
+      const key = r.product || "Unknown";
+      map[key] = (map[key] || 0) + (parseFloat(r.total) || 0);
     });
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
@@ -129,225 +196,324 @@ export default function Dashboard() {
       .slice(0, 6);
   }, [filtered]);
 
-  const maxRevenue = revenueByProduct[0]?.value || 1;
-
-  // ── Units by category (for bar chart) ─────────────────────────────────────
   const unitsByCategory = useMemo(() => {
     const map = {};
-    filtered.forEach(r => {
-      const k = r.category || "Unknown";
-      map[k] = (map[k] || 0) + (parseInt(r.quantity) || 0);
+    filtered.forEach((r) => {
+      const key = r.category || "Unknown";
+      map[key] = (map[key] || 0) + (parseInt(r.quantity) || 0);
     });
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
   }, [filtered]);
 
+  const statusSummary = useMemo(() => {
+    const map = { Fulfilled: 0, Pending: 0, Cancelled: 0, Other: 0 };
+    filtered.forEach((r) => {
+      const status = normalizeStatus(r.status);
+      if (status === "fulfilled") map.Fulfilled += 1;
+      else if (status === "pending") map.Pending += 1;
+      else if (status === "cancelled") map.Cancelled += 1;
+      else map.Other += 1;
+    });
+    return map;
+  }, [filtered]);
+
+  const topProduct = revenueByProduct[0];
+  const maxRevenue = revenueByProduct[0]?.value || 1;
   const maxUnits = unitsByCategory[0]?.value || 1;
 
-  // ── Sort handler ──────────────────────────────────────────────────────────
+  const recentOrders = useMemo(() => sorted.slice(0, 6), [sorted]);
+
+  const activeFilterCount = [
+    fProduct,
+    fCategory,
+    fPackaging,
+    fStatus,
+    fDateFrom,
+    fDateTo,
+    fPriceMin,
+    fPriceMax,
+    fQtyMin,
+  ].filter(Boolean).length;
+
   function handleSort(key) {
-    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortKey(key); setSortDir("asc"); }
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
   }
 
   function clearFilters() {
-    setFProduct(""); setFCategory(""); setFPackaging(""); setFStatus("");
-    setFDateFrom(""); setFDateTo(""); setFPriceMin(""); setFPriceMax(""); setFQtyMin("");
+    setFProduct("");
+    setFCategory("");
+    setFPackaging("");
+    setFStatus("");
+    setFDateFrom("");
+    setFDateTo("");
+    setFPriceMin("");
+    setFPriceMax("");
+    setFQtyMin("");
   }
 
-  function SortTh({ col, label }) {
+  function SortTh({ col, label, align = "left" }) {
     const active = sortKey === col;
-    const arrow  = active ? (sortDir === "asc" ? " ↑" : " ↓") : " ↕";
     return (
-      <th onClick={() => handleSort(col)}>
-        {label}
-        <span className={`sort-arrow${active ? " active" : ""}`}>{arrow}</span>
+      <th className={align === "right" ? "align-right" : ""} onClick={() => handleSort(col)}>
+        <span>{label}</span>
+        <span className={`sort-arrow${active ? " active" : ""}`}>
+          {active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
+        </span>
       </th>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="shell">
-
-      {/* Sidebar */}
-      <nav className="sidebar">
-        <div className="logo">Biz<span>Hub</span></div>
-        <div className="nav-label">Analytics</div>
-        <div className="nav-item active">📊 Sales</div>
-        <div className="nav-label">Coming soon</div>
-        <div className="nav-item" style={{opacity:0.4, cursor:"default"}}>🛒 Orders</div>
-        <div className="nav-item" style={{opacity:0.4, cursor:"default"}}>📦 Inventory</div>
-        <div className="nav-item" style={{opacity:0.4, cursor:"default"}}>📬 Inbox</div>
-        <div style={{marginTop:"auto", padding:"16px 18px"}}>
-          <div style={{fontSize:11, color:"var(--text-3)"}}>Sheet sync</div>
-          <div style={{fontSize:12, color:"var(--text-2)", marginTop:3}}>
-            {lastSync ? `${lastSync.toLocaleTimeString()}` : "—"}
+    <div className="dashboard-shell">
+      <aside className="sidebar">
+        <div className="brand-lockup">
+          <div className="brand-mark">B</div>
+          <div>
+            <div className="brand-name">BizHub</div>
+            <div className="brand-caption">Sales Control Center</div>
           </div>
         </div>
-      </nav>
 
-      {/* Main */}
-      <div className="main">
+        <div className="sidebar-section">
+          <p>Workspace</p>
+          <a className="sidebar-link active"><span>⌁</span> Overview</a>
+          <a className="sidebar-link muted"><span>□</span> Orders</a>
+          <a className="sidebar-link muted"><span>◇</span> Inventory</a>
+          <a className="sidebar-link muted"><span>✉</span> Inbox</a>
+        </div>
 
-        {/* Topbar */}
-        <div className="topbar">
-          <div className="topbar-title">Sales Analytics</div>
-          <div className="topbar-right">
-            {lastSync && (
-              <span className="sync-time">
-                Synced {lastSync.toLocaleTimeString()}
-              </span>
-            )}
-            <div className="live-pill">
-              <span className="live-dot" />
-              Live
+        <div className="sidebar-card">
+          <span className="sidebar-card-label">Live sheet sync</span>
+          <strong>{lastSync ? lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Not synced"}</strong>
+          <small>Auto-refreshes every 60 seconds</small>
+        </div>
+      </aside>
+
+      <main className="main-area">
+        <header className="hero-panel">
+          <div>
+            <div className="eyebrow-row">
+              <span className="live-indicator"><span /> Live dashboard</span>
+              <span className="sheet-pill">Google Sheets</span>
             </div>
-            <button className="refresh-btn" onClick={fetchData} disabled={loading}>
-              {loading ? "Syncing…" : "↻ Refresh"}
+            <h1>Sales Analytics</h1>
+            <p>Track orders, products, packaging, quantities, revenue, and fulfillment in one clean view.</p>
+          </div>
+
+          <div className="hero-actions">
+            {lastSync && <span>Last sync: {lastSync.toLocaleTimeString()}</span>}
+            <button className="primary-button" onClick={fetchData} disabled={loading}>
+              {loading ? "Syncing…" : "Refresh data"}
             </button>
           </div>
-        </div>
+        </header>
 
-        <div className="content">
+        <section className="metrics-grid">
+          <MetricCard
+            label="Total Revenue"
+            value={fmtCurrency(totalRevenue)}
+            detail={`${totalOrders} filtered orders`}
+            icon="◌"
+            tone="green"
+            progress={Math.min(100, Math.round((totalRevenue / Math.max(totalRevenue, 1)) * 100))}
+          />
+          <MetricCard
+            label="Units Sold"
+            value={fmtInt(totalUnits)}
+            detail="Total quantity moved"
+            icon="▦"
+            tone="blue"
+          />
+          <MetricCard
+            label="Average Order"
+            value={fmtCurrency(avgOrderValue)}
+            detail="Revenue per order"
+            icon="◍"
+            tone="gold"
+          />
+          <MetricCard
+            label="Fulfillment Rate"
+            value={`${fulfilledPct}%`}
+            detail={`${fulfilledCount} fulfilled / ${pendingCount} pending`}
+            icon="✓"
+            tone={fulfilledPct >= 70 ? "green" : "red"}
+            progress={fulfilledPct}
+          />
+        </section>
 
-          {error && (
-            <div className="error-box">
-              ⚠️ {error}
-              <br /><small>Check your GOOGLE_API_KEY and SHEET_ID in Vercel environment variables, and make sure the sheet is publicly viewable.</small>
-            </div>
-          )}
+        {error && (
+          <div className="error-box">
+            <strong>Connection issue</strong>
+            <span>{error}</span>
+            <small>Check your GOOGLE_API_KEY and SHEET_ID in Vercel environment variables, and make sure the sheet is publicly viewable.</small>
+          </div>
+        )}
 
-          {/* Metrics */}
-          <div className="metrics">
-            <div className="metric">
-              <div className="metric-label">Total Revenue</div>
-              <div className="metric-value">{fmtCurrency(totalRevenue)}</div>
-              <div className="metric-sub">{totalOrders} orders shown</div>
+        <section className="filter-panel">
+          <div className="filter-header">
+            <div>
+              <h2>Filters</h2>
+              <p>{activeFilterCount ? `${activeFilterCount} active filter${activeFilterCount > 1 ? "s" : ""}` : "Showing all live rows"}</p>
             </div>
-            <div className="metric">
-              <div className="metric-label">Units Sold</div>
-              <div className="metric-value">{fmtInt(totalUnits)}</div>
-              <div className="metric-sub">Across all products</div>
-            </div>
-            <div className="metric">
-              <div className="metric-label">Avg Order Value</div>
-              <div className="metric-value">{fmtCurrency(avgOrderValue)}</div>
-              <div className="metric-sub">Per order</div>
-            </div>
-            <div className="metric">
-              <div className="metric-label">Fulfillment Rate</div>
-              <div className="metric-value">{fulfilledPct}%</div>
-              <div className={`metric-sub ${fulfilledPct >= 70 ? "up" : "down"}`}>
-                {fulfilledPct >= 70 ? "▲ On track" : "▼ Below target"}
-              </div>
-            </div>
+            <button className="ghost-button" onClick={clearFilters}>Clear filters</button>
           </div>
 
-          {/* Filters */}
-          <div className="filter-bar">
-            <div className="filter-group">
-              <label>Product</label>
-              <select value={fProduct} onChange={e => setFProduct(e.target.value)}>
-                <option value="">All products</option>
-                {products.map(p => <option key={p}>{p}</option>)}
-              </select>
-            </div>
-            <div className="filter-group">
-              <label>Category</label>
-              <select value={fCategory} onChange={e => setFCategory(e.target.value)}>
-                <option value="">All categories</option>
-                {categories.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div className="filter-group">
-              <label>Packaging</label>
-              <select value={fPackaging} onChange={e => setFPackaging(e.target.value)}>
-                <option value="">All packaging</option>
-                {packagings.map(p => <option key={p}>{p}</option>)}
-              </select>
-            </div>
-            <div className="filter-group">
-              <label>Status</label>
-              <select value={fStatus} onChange={e => setFStatus(e.target.value)}>
-                <option value="">All statuses</option>
-                {statuses.map(s => <option key={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="filter-group">
-              <label>Date from</label>
-              <input type="date" value={fDateFrom} onChange={e => setFDateFrom(e.target.value)} />
-            </div>
-            <div className="filter-group">
-              <label>Date to</label>
-              <input type="date" value={fDateTo} onChange={e => setFDateTo(e.target.value)} />
-            </div>
-            <div className="filter-group">
-              <label>Min price ($)</label>
-              <input type="text" placeholder="0" value={fPriceMin} onChange={e => setFPriceMin(e.target.value)} style={{width:80}} />
-            </div>
-            <div className="filter-group">
-              <label>Max price ($)</label>
-              <input type="text" placeholder="∞" value={fPriceMax} onChange={e => setFPriceMax(e.target.value)} style={{width:80}} />
-            </div>
-            <div className="filter-group">
-              <label>Min qty</label>
-              <input type="text" placeholder="0" value={fQtyMin} onChange={e => setFQtyMin(e.target.value)} style={{width:70}} />
-            </div>
-            <button className="clear-btn" onClick={clearFilters}>✕ Clear</button>
+          <div className="filter-grid">
+            <SelectFilter label="Product" value={fProduct} onChange={setFProduct} options={products} placeholder="All products" />
+            <SelectFilter label="Category" value={fCategory} onChange={setFCategory} options={categories} placeholder="All categories" />
+            <SelectFilter label="Packaging" value={fPackaging} onChange={setFPackaging} options={packagings} placeholder="All packaging" />
+            <SelectFilter label="Status" value={fStatus} onChange={setFStatus} options={statuses} placeholder="All statuses" />
+            <TextFilter label="Date from" value={fDateFrom} onChange={setFDateFrom} type="date" />
+            <TextFilter label="Date to" value={fDateTo} onChange={setFDateTo} type="date" />
+            <TextFilter label="Min price" value={fPriceMin} onChange={setFPriceMin} placeholder="0" />
+            <TextFilter label="Max price" value={fPriceMax} onChange={setFPriceMax} placeholder="∞" />
+            <TextFilter label="Min qty" value={fQtyMin} onChange={setFQtyMin} placeholder="0" />
           </div>
+        </section>
 
-          {/* Charts */}
-          {!loading && filtered.length > 0 && (
-            <div className="charts-row">
-              <div className="chart-card">
-                <h3>Revenue by product</h3>
-                <div className="bar-chart">
-                  {revenueByProduct.map(({ name, value }) => (
-                    <div className="bar-row" key={name}>
-                      <span className="bar-label" title={name}>{name}</span>
-                      <div className="bar-track">
-                        <div className="bar-fill" style={{ width: `${Math.round((value / maxRevenue) * 100)}%` }} />
-                      </div>
-                      <span className="bar-val">{fmtCurrency(value)}</span>
-                    </div>
-                  ))}
-                </div>
+        <section className="insights-grid">
+          <article className="panel large-panel">
+            <div className="panel-header">
+              <div>
+                <h2>Revenue by product</h2>
+                <p>{topProduct ? `${topProduct.name} is currently leading` : "No product data yet"}</p>
               </div>
-              <div className="chart-card">
-                <h3>Units sold by category</h3>
-                <div className="bar-chart">
-                  {unitsByCategory.map(({ name, value }) => (
-                    <div className="bar-row" key={name}>
-                      <span className="bar-label" title={name}>{name}</span>
-                      <div className="bar-track">
-                        <div className="bar-fill" style={{ width: `${Math.round((value / maxUnits) * 100)}%`, background: "#378ADD" }} />
-                      </div>
-                      <span className="bar-val">{fmtInt(value)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Table */}
-          <div className="table-card">
-            <div className="table-header">
-              <h3>Order detail</h3>
-              <span className="row-count">
-                {loading ? "Loading…" : `${sorted.length} of ${rows.length} rows`}
-              </span>
+              <span className="panel-chip">Top 6</span>
             </div>
 
             {loading ? (
-              <div className="empty">
-                <div className="skeleton" style={{ width: "60%", height: 14, margin: "0 auto 10px" }} />
-                <div className="skeleton" style={{ width: "40%", height: 14, margin: "0 auto" }} />
+              <EmptyChart message="Loading revenue data…" />
+            ) : revenueByProduct.length ? (
+              <div className="lux-bars">
+                {revenueByProduct.map(({ name, value }, index) => (
+                  <div className="lux-bar-row" key={name}>
+                    <div className="bar-meta">
+                      <span className="rank">{String(index + 1).padStart(2, "0")}</span>
+                      <span title={name}>{name}</span>
+                    </div>
+                    <div className="bar-line">
+                      <span style={{ width: `${Math.round((value / maxRevenue) * 100)}%` }} />
+                    </div>
+                    <strong>{fmtCurrency(value)}</strong>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyChart message="No rows match the current filters." />
+            )}
+          </article>
+
+          <article className="panel status-panel">
+            <div className="panel-header compact-header">
+              <div>
+                <h2>Order health</h2>
+                <p>Fulfilled vs pending</p>
+              </div>
+            </div>
+
+            <div
+              className="donut"
+              style={{
+                background: `conic-gradient(var(--success) 0 ${fulfilledPct}%, var(--warning) ${fulfilledPct}% ${Math.min(100, fulfilledPct + (totalOrders ? Math.round((pendingCount / totalOrders) * 100) : 0))}%, var(--danger) 0)`,
+              }}
+            >
+              <div>
+                <strong>{fulfilledPct}%</strong>
+                <span>fulfilled</span>
+              </div>
+            </div>
+
+            <div className="status-list">
+              <div><span className="legend success" /> Fulfilled <strong>{statusSummary.Fulfilled}</strong></div>
+              <div><span className="legend warning" /> Pending <strong>{statusSummary.Pending}</strong></div>
+              <div><span className="legend danger" /> Cancelled <strong>{statusSummary.Cancelled}</strong></div>
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header compact-header">
+              <div>
+                <h2>Units by category</h2>
+                <p>Quantity movement</p>
+              </div>
+            </div>
+
+            {loading ? (
+              <EmptyChart message="Loading category data…" />
+            ) : unitsByCategory.length ? (
+              <div className="category-list">
+                {unitsByCategory.map(({ name, value }) => (
+                  <div className="category-item" key={name}>
+                    <div>
+                      <strong title={name}>{name}</strong>
+                      <span>{fmtInt(value)} units</span>
+                    </div>
+                    <div className="category-meter">
+                      <span style={{ width: `${Math.round((value / maxUnits) * 100)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyChart message="No category data yet." />
+            )}
+          </article>
+        </section>
+
+        <section className="lower-grid">
+          <article className="panel orders-panel">
+            <div className="panel-header">
+              <div>
+                <h2>Recent activity</h2>
+                <p>Latest visible orders after filters</p>
+              </div>
+              <span className="panel-chip">{recentOrders.length} shown</span>
+            </div>
+
+            <div className="activity-list">
+              {loading ? (
+                <EmptyChart message="Loading orders…" />
+              ) : recentOrders.length ? (
+                recentOrders.map((order, index) => (
+                  <div className="activity-item" key={order.order_id || index}>
+                    <div className="activity-icon">{index + 1}</div>
+                    <div>
+                      <strong>{order.product || "Unnamed product"}</strong>
+                      <span>{order.order_id || "No order ID"} · {order.date || "No date"}</span>
+                    </div>
+                    <div className="activity-right">
+                      <strong>{fmtCurrency(order.total)}</strong>
+                      <StatusBadge status={order.status} />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <EmptyChart message="No recent orders to show." />
+              )}
+            </div>
+          </article>
+
+          <article className="panel table-panel">
+            <div className="panel-header">
+              <div>
+                <h2>Order detail</h2>
+                <p>{loading ? "Loading rows…" : `${sorted.length} of ${rows.length} rows`}</p>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="table-skeleton">
+                <span /><span /><span />
               </div>
             ) : sorted.length === 0 ? (
-              <div className="empty">
+              <div className="empty-state">
                 {rows.length === 0
                   ? "No data yet — make sure your Google Sheet has data and your API key is set."
                   : "No rows match the current filters."}
@@ -357,28 +523,28 @@ export default function Dashboard() {
                 <table>
                   <thead>
                     <tr>
-                      <SortTh col="order_id"   label="Order ID" />
-                      <SortTh col="date"        label="Date" />
-                      <SortTh col="product"     label="Product" />
-                      <SortTh col="category"    label="Category" />
-                      <SortTh col="packaging"   label="Packaging" />
-                      <SortTh col="quantity"    label="Qty" />
-                      <SortTh col="unit_price"  label="Unit price" />
-                      <SortTh col="total"       label="Total" />
-                      <SortTh col="status"      label="Status" />
+                      <SortTh col="order_id" label="Order ID" />
+                      <SortTh col="date" label="Date" />
+                      <SortTh col="product" label="Product" />
+                      <SortTh col="category" label="Category" />
+                      <SortTh col="packaging" label="Packaging" />
+                      <SortTh col="quantity" label="Qty" align="right" />
+                      <SortTh col="unit_price" label="Unit price" align="right" />
+                      <SortTh col="total" label="Total" align="right" />
+                      <SortTh col="status" label="Status" />
                     </tr>
                   </thead>
                   <tbody>
                     {sorted.map((row, i) => (
                       <tr key={row.order_id || i}>
-                        <td style={{ fontFamily: "monospace", fontSize: 12 }}>{row.order_id || "—"}</td>
+                        <td className="mono">{row.order_id || "—"}</td>
                         <td>{row.date || "—"}</td>
-                        <td>{row.product || "—"}</td>
+                        <td className="strong-cell">{row.product || "—"}</td>
                         <td>{row.category || "—"}</td>
                         <td>{row.packaging || "—"}</td>
-                        <td style={{ textAlign: "right" }}>{fmtInt(row.quantity)}</td>
-                        <td style={{ textAlign: "right" }}>{fmtCurrency(row.unit_price)}</td>
-                        <td style={{ textAlign: "right", fontWeight: 500 }}>{fmtCurrency(row.total)}</td>
+                        <td className="align-right">{fmtInt(row.quantity)}</td>
+                        <td className="align-right">{fmtCurrency(row.unit_price)}</td>
+                        <td className="align-right strong-cell">{fmtCurrency(row.total)}</td>
                         <td><StatusBadge status={row.status} /></td>
                       </tr>
                     ))}
@@ -386,10 +552,9 @@ export default function Dashboard() {
                 </table>
               </div>
             )}
-          </div>
-
-        </div>
-      </div>
+          </article>
+        </section>
+      </main>
     </div>
   );
 }
