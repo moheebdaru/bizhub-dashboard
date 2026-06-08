@@ -4,12 +4,18 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 
 const CURRENCY = "$";
 
+const SAMPLE_ROWS = [
+  { order_id: "BH-1001", date: "2026-06-01", product: "Vanilla Mist", category: "Sanitizer", packaging: "30ml Spray", quantity: "24", unit_price: "12", total: "288", status: "Fulfilled" },
+  { order_id: "BH-1002", date: "2026-06-02", product: "Lavender Rose", category: "Sanitizer", packaging: "30ml Spray", quantity: "18", unit_price: "12", total: "216", status: "Pending" },
+  { order_id: "BH-1003", date: "2026-06-03", product: "Lemon Eucalyptus", category: "Sanitizer", packaging: "Gift Set", quantity: "9", unit_price: "42", total: "378", status: "Fulfilled" },
+  { order_id: "BH-1004", date: "2026-06-04", product: "Peach Vanilla", category: "Sanitizer", packaging: "30ml Spray", quantity: "30", unit_price: "12", total: "360", status: "Fulfilled" },
+  { order_id: "BH-1005", date: "2026-06-05", product: "Mini Bundle", category: "Bundle", packaging: "Box", quantity: "7", unit_price: "52", total: "364", status: "Cancelled" },
+  { order_id: "BH-1006", date: "2026-06-06", product: "Vanilla Mist", category: "Sanitizer", packaging: "Refill Pack", quantity: "15", unit_price: "18", total: "270", status: "Pending" },
+];
+
 function fmt(n) {
   const value = Number(n) || 0;
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtInt(n) {
@@ -32,6 +38,14 @@ function safeDateValue(date) {
   return date || "";
 }
 
+function statusTone(status) {
+  const s = normalizeStatus(status);
+  if (s === "fulfilled") return "success";
+  if (s === "pending") return "warning";
+  if (s === "cancelled") return "danger";
+  return "neutral";
+}
+
 function StatusBadge({ status }) {
   const normalized = normalizeStatus(status).replace(/\s+/g, "-") || "unknown";
   return (
@@ -42,9 +56,9 @@ function StatusBadge({ status }) {
   );
 }
 
-function MetricCard({ label, value, detail, icon, tone = "green", active = false, onClick, progress }) {
+function MetricCard({ label, value, detail, icon, tone = "green", progress }) {
   return (
-    <button className={`metric-card ${tone}${active ? " is-active" : ""}`} onClick={onClick} type="button">
+    <article className={`metric-card ${tone}`}>
       <span className="metric-glow" />
       <span className="metric-topline">
         <span className="metric-icon">{icon}</span>
@@ -58,7 +72,7 @@ function MetricCard({ label, value, detail, icon, tone = "green", active = false
           <span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
         </span>
       ) : null}
-    </button>
+    </article>
   );
 }
 
@@ -68,9 +82,7 @@ function SelectFilter({ label, value, onChange, options, placeholder }) {
       <span>{label}</span>
       <select value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">{placeholder}</option>
-        {options.map((item) => (
-          <option key={item} value={item}>{item}</option>
-        ))}
+        {options.map((item) => <option key={item} value={item}>{item}</option>)}
       </select>
     </label>
   );
@@ -80,12 +92,7 @@ function TextFilter({ label, value, onChange, placeholder, type = "text" }) {
   return (
     <label className="field-control">
       <span>{label}</span>
-      <input
-        type={type}
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      <input type={type} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
 }
@@ -97,6 +104,23 @@ function EmptyState({ title, body }) {
       <strong>{title}</strong>
       {body ? <p>{body}</p> : null}
     </div>
+  );
+}
+
+function Sparkline({ values }) {
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const points = values.map((v, i) => {
+    const x = values.length === 1 ? 100 : (i / (values.length - 1)) * 100;
+    const y = 70 - ((v - min) / range) * 52;
+    return `${x},${y}`;
+  }).join(" ");
+
+  return (
+    <svg className="sparkline" viewBox="0 0 100 80" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points={points} />
+    </svg>
   );
 }
 
@@ -132,7 +156,9 @@ export default function Dashboard() {
       setRows(json.rows || []);
       setLastSync(new Date());
     } catch (e) {
-      setError(e.message);
+      setRows(SAMPLE_ROWS);
+      setLastSync(new Date());
+      setError(`${e.message} Showing design preview data until your Google Sheet is connected.`);
     } finally {
       setLoading(false);
     }
@@ -168,12 +194,9 @@ export default function Dashboard() {
 
       if (q) {
         const haystack = [r.order_id, r.date, r.product, r.category, r.packaging, r.status]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
+          .filter(Boolean).join(" ").toLowerCase();
         if (!haystack.includes(q)) return false;
       }
-
       return true;
     });
   }, [rows, search, fProduct, fCategory, fPackaging, fStatus, fDateFrom, fDateTo, fPriceMin, fPriceMax, fQtyMin]);
@@ -183,12 +206,10 @@ export default function Dashboard() {
       let av = a[sortKey] ?? "";
       let bv = b[sortKey] ?? "";
       const numCols = ["quantity", "unit_price", "total"];
-
       if (numCols.includes(sortKey)) {
         av = parseFloat(av) || 0;
         bv = parseFloat(bv) || 0;
       }
-
       if (av < bv) return sortDir === "asc" ? -1 : 1;
       if (av > bv) return sortDir === "asc" ? 1 : -1;
       return 0;
@@ -222,6 +243,15 @@ export default function Dashboard() {
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 6);
   }, [filtered]);
 
+  const dailyRevenue = useMemo(() => {
+    const map = {};
+    filtered.forEach((r) => {
+      const key = r.date || "No date";
+      map[key] = (map[key] || 0) + (parseFloat(r.total) || 0);
+    });
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).slice(-8).map(([date, value]) => ({ date, value }));
+  }, [filtered]);
+
   const statusSummary = useMemo(() => {
     const map = { fulfilled: 0, pending: 0, cancelled: 0, other: 0 };
     filtered.forEach((r) => {
@@ -238,8 +268,9 @@ export default function Dashboard() {
   const chartMax = chartData[0]?.value || 1;
   const topProduct = revenueByProduct[0];
   const recentOrders = useMemo(() => sorted.slice(0, 5), [sorted]);
-
   const activeFilterCount = [search, fProduct, fCategory, fPackaging, fStatus, fDateFrom, fDateTo, fPriceMin, fPriceMax, fQtyMin].filter(Boolean).length;
+  const lastOrder = sorted[0];
+  const sparkValues = dailyRevenue.length ? dailyRevenue.map((d) => d.value) : [0, 0, 0, 0];
 
   function handleSort(key) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -271,9 +302,7 @@ export default function Dashboard() {
     return (
       <th className={align === "right" ? "align-right" : ""} onClick={() => handleSort(col)}>
         <span>{label}</span>
-        <span className={`sort-arrow${active ? " active" : ""}`}>
-          {active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}
-        </span>
+        <span className={`sort-arrow${active ? " active" : ""}`}>{active ? (sortDir === "asc" ? "↑" : "↓") : "↕"}</span>
       </th>
     );
   }
@@ -285,7 +314,7 @@ export default function Dashboard() {
           <div className="brand-mark">B</div>
           <div>
             <strong>BizHub</strong>
-            <span>Operations cockpit</span>
+            <span>Live business cockpit</span>
           </div>
         </div>
 
@@ -296,11 +325,17 @@ export default function Dashboard() {
           <button className="nav-item" type="button"><span>✉</span> Messages</button>
         </nav>
 
+        <div className="sidebar-card mini-summary">
+          <span className="sidebar-label">Today’s pulse</span>
+          <strong>{fmtCurrency(totalRevenue)}</strong>
+          <p>{totalOrders} visible orders · {fulfilledPct}% fulfilled</p>
+        </div>
+
         <div className="sync-card">
           <div className="pulse-dot" />
           <span>Live sheet sync</span>
           <strong>{lastSync ? lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Waiting"}</strong>
-          <p>Updates automatically every minute.</p>
+          <p>Refreshes automatically every minute.</p>
         </div>
       </aside>
 
@@ -308,7 +343,7 @@ export default function Dashboard() {
         <header className="topbar">
           <div>
             <span className="eyebrow">Sales command center</span>
-            <h1>Dashboard</h1>
+            <h1>Business dashboard</h1>
           </div>
 
           <div className="topbar-actions">
@@ -330,29 +365,30 @@ export default function Dashboard() {
               <span>{rows.length} total rows</span>
               <span>{activeFilterCount} active filters</span>
             </div>
-            <h2>Turn every sheet row into a clean business view.</h2>
-            <p>Filter, sort, review order details, and monitor sales performance from one interactive workspace.</p>
+            <h2>A cleaner command center for orders, sales, and fulfillment.</h2>
+            <p>Monitor performance, spot your best products, filter instantly, and open each order in a polished preview drawer.</p>
+            <div className="hero-actions">
+              <button type="button" onClick={() => setStatusQuickFilter("Pending")}>Review pending</button>
+              <button type="button" onClick={clearFilters}>Reset view</button>
+            </div>
           </div>
 
-          <div className="hero-stat-stack">
-            <button type="button" onClick={() => setStatusQuickFilter("Pending")}>
-              <span>Pending</span>
-              <strong>{pendingCount}</strong>
-            </button>
-            <button type="button" onClick={() => setStatusQuickFilter("Fulfilled")}>
-              <span>Fulfilled</span>
-              <strong>{fulfilledCount}</strong>
-            </button>
-            <button type="button" onClick={() => setStatusQuickFilter("Cancelled")}>
-              <span>Cancelled</span>
-              <strong>{cancelledCount}</strong>
-            </button>
+          <div className="hero-visual-card">
+            <div className="hero-visual-top">
+              <span>Revenue trend</span>
+              <strong>{fmtCurrency(totalRevenue)}</strong>
+            </div>
+            <Sparkline values={sparkValues} />
+            <div className="hero-mini-grid">
+              <span><strong>{topProduct?.name || "—"}</strong>Top product</span>
+              <span><strong>{lastOrder?.order_id || "—"}</strong>Latest order</span>
+            </div>
           </div>
         </section>
 
         {error ? (
           <div className="error-box">
-            <strong>Connection issue</strong>
+            <strong>Preview mode</strong>
             <span>{error}</span>
           </div>
         ) : null}
@@ -360,14 +396,15 @@ export default function Dashboard() {
         <section className="metrics-grid">
           <MetricCard label="Revenue" value={fmtCurrency(totalRevenue)} detail={`${totalOrders} orders shown`} icon="◉" tone="green" />
           <MetricCard label="Units sold" value={fmtInt(totalUnits)} detail="Across all products" icon="▦" tone="blue" />
-          <MetricCard label="Avg order" value={fmtCurrency(avgOrderValue)} detail="Per order" icon="◇" tone="purple" />
+          <MetricCard label="Avg order" value={fmtCurrency(avgOrderValue)} detail="Average basket value" icon="◇" tone="purple" />
           <MetricCard label="Fulfillment" value={`${fulfilledPct}%`} detail={`${fulfilledCount} done / ${pendingCount} pending`} icon="✓" tone="gold" progress={fulfilledPct} />
         </section>
 
         <section className="control-panel">
           <div className="control-header">
             <div>
-              <h2>Interactive filters</h2>
+              <span className="section-kicker">Filters</span>
+              <h2>Shape the live view</h2>
               <p>{activeFilterCount ? `${activeFilterCount} filters applied` : "Start narrowing your live data"}</p>
             </div>
             <div className="quick-status-row">
@@ -395,8 +432,9 @@ export default function Dashboard() {
           <article className="panel chart-panel">
             <div className="panel-header">
               <div>
+                <span className="section-kicker">Performance</span>
                 <h2>{chartMode === "revenue" ? "Revenue leaders" : "Category movement"}</h2>
-                <p>{topProduct ? `${topProduct.name} is your strongest product right now.` : "Waiting for sales data."}</p>
+                <p>{topProduct ? `${topProduct.name} is currently leading your filtered view.` : "Waiting for sales data."}</p>
               </div>
               <div className="segmented-control">
                 <button className={chartMode === "revenue" ? "active" : ""} onClick={() => setChartMode("revenue")} type="button">Revenue</button>
@@ -421,6 +459,7 @@ export default function Dashboard() {
           <article className="panel health-panel">
             <div className="panel-header compact">
               <div>
+                <span className="section-kicker">Fulfillment</span>
                 <h2>Order health</h2>
                 <p>Click a segment below to filter.</p>
               </div>
@@ -443,6 +482,7 @@ export default function Dashboard() {
           <article className="panel activity-panel">
             <div className="panel-header compact">
               <div>
+                <span className="section-kicker">Activity</span>
                 <h2>Recent orders</h2>
                 <p>Click any order to preview its details.</p>
               </div>
@@ -455,6 +495,7 @@ export default function Dashboard() {
                     <strong>{order.product || "Unnamed product"}</strong>
                     <small>{order.order_id || "No ID"} · {order.date || "No date"}</small>
                   </span>
+                  <span className={`activity-status ${statusTone(order.status)}`}>{order.status || "Unknown"}</span>
                   <span className="activity-total">{fmtCurrency(order.total)}</span>
                 </button>
               )) : <EmptyState title="No recent orders" body="There are no rows matching your filters." />}
@@ -464,6 +505,7 @@ export default function Dashboard() {
           <article className="panel table-panel">
             <div className="panel-header table-header">
               <div>
+                <span className="section-kicker">Database</span>
                 <h2>Order detail</h2>
                 <p>{loading ? "Loading rows..." : `${sorted.length} of ${rows.length} rows`}</p>
               </div>
