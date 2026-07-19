@@ -26,6 +26,13 @@ function fmtCurrency(n) {
   return `${CURRENCY}${fmt(n)}`;
 }
 
+const CURRENCY_SYMBOLS = { EGP: "E£", USD: "$", EUR: "€", GBP: "£" };
+
+function fmtMoney(n, currencyCode) {
+  const symbol = CURRENCY_SYMBOLS[currencyCode] || (currencyCode ? `${currencyCode} ` : CURRENCY);
+  return `${symbol}${fmt(n)}`;
+}
+
 function unique(arr) {
   return [...new Set(arr.filter(Boolean))].sort();
 }
@@ -146,6 +153,14 @@ export default function Dashboard() {
   const [fPriceMax, setFPriceMax] = useState("");
   const [fQtyMin, setFQtyMin] = useState("");
 
+  const [financeMetrics, setFinanceMetrics] = useState(null);
+  const [financeLoading, setFinanceLoading] = useState(true);
+  const [financeError, setFinanceError] = useState(null);
+
+  const [shopify, setShopify] = useState(null);
+  const [shopifyLoading, setShopifyLoading] = useState(true);
+  const [shopifyError, setShopifyError] = useState(null);
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -164,11 +179,53 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchFinance = useCallback(async () => {
+    try {
+      setFinanceLoading(true);
+      setFinanceError(null);
+      const res = await fetch("/api/finance");
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      setFinanceMetrics(json.metrics || {});
+    } catch (e) {
+      setFinanceError(e.message);
+    } finally {
+      setFinanceLoading(false);
+    }
+  }, []);
+
+  const fetchShopify = useCallback(async () => {
+    try {
+      setShopifyLoading(true);
+      setShopifyError(null);
+      const res = await fetch("/api/shopify");
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      setShopify(json);
+    } catch (e) {
+      setShopifyError(e.message);
+    } finally {
+      setShopifyLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchData();
     const id = setInterval(fetchData, 60_000);
     return () => clearInterval(id);
   }, [fetchData]);
+
+  useEffect(() => {
+    fetchFinance();
+    const id = setInterval(fetchFinance, 60_000);
+    return () => clearInterval(id);
+  }, [fetchFinance]);
+
+  useEffect(() => {
+    fetchShopify();
+    const id = setInterval(fetchShopify, 60_000);
+    return () => clearInterval(id);
+  }, [fetchShopify]);
 
   const products = useMemo(() => unique(rows.map((r) => r.product)), [rows]);
   const categories = useMemo(() => unique(rows.map((r) => r.category)), [rows]);
@@ -398,6 +455,86 @@ export default function Dashboard() {
           <MetricCard label="Units sold" value={fmtInt(totalUnits)} detail="Across all products" icon="▦" tone="blue" />
           <MetricCard label="Avg order" value={fmtCurrency(avgOrderValue)} detail="Average basket value" icon="◇" tone="purple" />
           <MetricCard label="Fulfillment" value={`${fulfilledPct}%`} detail={`${fulfilledCount} done / ${pendingCount} pending`} icon="✓" tone="gold" progress={fulfilledPct} />
+        </section>
+
+        <section className="insights-grid">
+          <article className="panel finance-panel">
+            <div className="panel-header compact">
+              <div>
+                <span className="section-kicker">Finance</span>
+                <h2>P&amp;L snapshot</h2>
+                <p>{financeError ? "Connect FINANCE_SHEET_ID to enable this feed." : "Synced from Google Sheets."}</p>
+              </div>
+            </div>
+            {financeLoading ? (
+              <EmptyState title="Loading finance data" body="Pulling the latest P&L figures." />
+            ) : financeError ? (
+              <EmptyState title="Finance feed not connected" body={financeError} />
+            ) : (
+              <div className="metrics-grid compact-grid">
+                <MetricCard label="Revenue" value={fmtMoney(financeMetrics?.Revenue, "EGP")} detail="This batch" icon="◉" tone="green" />
+                <MetricCard label="COGS" value={fmtMoney(financeMetrics?.COGS, "EGP")} detail="Materials + fixed" icon="▦" tone="blue" />
+                <MetricCard label="Fixed Costs" value={fmtMoney(financeMetrics?.["Fixed Costs"], "EGP")} detail="Photography, Shopify" icon="◇" tone="purple" />
+                <MetricCard label="Net Income" value={fmtMoney(financeMetrics?.["Net Income"], "EGP")} detail="Final P&L" icon="✓" tone="gold" />
+              </div>
+            )}
+          </article>
+
+          <article className="panel shopify-panel">
+            <div className="panel-header compact">
+              <div>
+                <span className="section-kicker">Shopify</span>
+                <h2>{shopify?.shop?.name || "Store"} live metrics</h2>
+                <p>{shopifyError ? "Connect SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN to enable this feed." : "Last 50 orders, refreshed every minute."}</p>
+              </div>
+            </div>
+            {shopifyLoading ? (
+              <EmptyState title="Loading Shopify data" body="Pulling live orders and inventory." />
+            ) : shopifyError ? (
+              <EmptyState title="Shopify feed not connected" body={shopifyError} />
+            ) : (
+              <>
+                <div className="metrics-grid compact-grid">
+                  <MetricCard label="Revenue" value={fmtMoney(shopify.metrics.totalRevenue, shopify.shop.currency)} detail={`${shopify.metrics.totalOrders} recent orders`} icon="◉" tone="green" />
+                  <MetricCard label="Today" value={fmtMoney(shopify.metrics.todaysRevenue, shopify.shop.currency)} detail={`${shopify.metrics.todaysOrderCount} orders today`} icon="▦" tone="blue" />
+                  <MetricCard label="Avg order" value={fmtMoney(shopify.metrics.avgOrderValue, shopify.shop.currency)} detail="Average basket value" icon="◇" tone="purple" />
+                  <MetricCard label="Inventory value" value={fmtMoney(shopify.inventory?.totalValue, shopify.shop.currency)} detail={`${fmtInt(shopify.inventory?.totalUnits)} units on hand`} icon="▦" tone="gold" />
+                </div>
+
+                <div className="health-list" style={{ marginTop: 16 }}>
+                  <button type="button"><span className="dot success" />Fulfilled<strong>{shopify.fulfillmentCounts?.fulfilled ?? 0}</strong></button>
+                  <button type="button"><span className="dot warning" />Pending<strong>{shopify.fulfillmentCounts?.pending ?? 0}</strong></button>
+                  <button type="button"><span className="dot warning" />Partial<strong>{shopify.fulfillmentCounts?.partial ?? 0}</strong></button>
+                  <button type="button"><span className="dot danger" />Cancelled<strong>{shopify.fulfillmentCounts?.cancelled ?? 0}</strong></button>
+                </div>
+
+                {shopify.returns?.returnedOrderCount ? (
+                  <p className="panel-header compact" style={{ marginTop: 12, marginBottom: 0 }}>
+                    <span className="section-kicker">Returns</span>
+                    <span style={{ display: "block", marginTop: 4 }}>
+                      {shopify.returns.returnedOrderCount} order{shopify.returns.returnedOrderCount === 1 ? "" : "s"} refunded ·{" "}
+                      {fmtMoney(shopify.returns.totalRefunded, shopify.shop.currency)} total
+                    </span>
+                  </p>
+                ) : null}
+
+                {shopify.lowStock?.length ? (
+                  <div className="activity-list" style={{ marginTop: 16 }}>
+                    {shopify.lowStock.slice(0, 5).map((p) => (
+                      <div className="activity-card" key={p.id}>
+                        <span className="activity-number">{p.inventory}</span>
+                        <span>
+                          <strong>{p.title}</strong>
+                          <small>Low stock · {p.variantCount} variant{p.variantCount === 1 ? "" : "s"}</small>
+                        </span>
+                        <span className="activity-total">{fmtMoney(p.price, shopify.shop.currency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </article>
         </section>
 
         <section className="control-panel">
