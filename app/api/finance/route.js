@@ -1,14 +1,18 @@
 // app/api/finance/route.js
 // This runs on the server — your API key is never exposed to the browser
 //
-// Expects a Google Sheet tab named "Finance Dashboard Input" with two columns:
-//   Metric | Value
-// e.g. Revenue | 102000
-//      COGS | 48300
-//      Fixed Costs | 11400
-//      Net Income | 42300
-// This mirrors the finance model built in daru_finance_master.xlsx — point
-// FINANCE_SHEET_ID at that same spreadsheet once it's uploaded to Google Sheets.
+// Reads live figures directly from the "P&L Statement" tab of the
+// daru_finance_master Google Sheet (built from daru_finance_master.xlsx).
+// Requires the sheet to have general access set to "Anyone with the link:
+// Viewer" since this uses a simple API key rather than full OAuth.
+
+const CELLS = {
+  revenue: "'P&L Statement'!B5",
+  cogs: "'P&L Statement'!B6",
+  grossProfit: "'P&L Statement'!B7",
+  fixedCosts: "'P&L Statement'!B8",
+  netIncome: "'P&L Statement'!B9",
+};
 
 export async function GET() {
   const apiKey = process.env.GOOGLE_API_KEY;
@@ -21,7 +25,8 @@ export async function GET() {
     );
   }
 
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Finance%20Dashboard%20Input?key=${apiKey}`;
+  const ranges = Object.values(CELLS).map((r) => `ranges=${encodeURIComponent(r)}`).join("&");
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values:batchGet?${ranges}&key=${apiKey}`;
 
   try {
     const res = await fetch(url, {
@@ -35,19 +40,23 @@ export async function GET() {
     }
 
     const json = await res.json();
-    const rows = json.values || [];
+    const ranges = json.valueRanges || [];
 
-    if (rows.length < 2) {
-      return Response.json({ metrics: {} });
+    function valueAt(index) {
+      const raw = ranges[index]?.values?.[0]?.[0];
+      if (raw === undefined) return null;
+      const numeric = parseFloat(String(raw).replace(/[,()]/g, ""));
+      return Number.isNaN(numeric) ? raw : Math.abs(numeric);
     }
 
-    // First row is headers (Metric, Value), rest are data pairs
-    const metrics = {};
-    rows.slice(1).forEach(([metric, value]) => {
-      if (!metric) return;
-      const numeric = parseFloat(String(value).replace(/,/g, ""));
-      metrics[metric.trim()] = Number.isNaN(numeric) ? value : numeric;
-    });
+    const keys = Object.keys(CELLS);
+    const metrics = {
+      Revenue: valueAt(keys.indexOf("revenue")),
+      COGS: valueAt(keys.indexOf("cogs")),
+      "Gross Profit": valueAt(keys.indexOf("grossProfit")),
+      "Fixed Costs": valueAt(keys.indexOf("fixedCosts")),
+      "Net Income": valueAt(keys.indexOf("netIncome")),
+    };
 
     return Response.json({ metrics });
   } catch (err) {

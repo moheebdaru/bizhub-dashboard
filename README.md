@@ -46,24 +46,28 @@ order_id | date | product | category | packaging | quantity | unit_price | total
 
 ## Google Sheet format — Finance feed
 
-Add a tab named `Finance Dashboard Input` with two columns:
+`FINANCE_SHEET_ID` points at the `daru_finance_master` Google Sheet directly — no
+separate input tab needed. The API route reads these cells straight from its
+`P&L Statement` tab:
 ```
-Metric | Value
-Revenue | 102000
-COGS | 48300
-Fixed Costs | 11400
-Net Income | 42300
+Revenue        -> 'P&L Statement'!B5
+COGS           -> 'P&L Statement'!B6
+Gross Profit   -> 'P&L Statement'!B7
+Fixed Costs    -> 'P&L Statement'!B8
+Net Income     -> 'P&L Statement'!B9
 ```
-This mirrors the P&L model built in `daru_finance_master.xlsx` — once that workbook
-is uploaded to Google Sheets, add a tab with this exact name and layout, pulling the
-values from its `P&L Statement` sheet (e.g. `='P&L Statement'!B5`).
+Two requirements for this to work:
+1. The workbook must be a **native Google Sheet** (File → Save as Google Sheets if
+   it's still an uploaded `.xlsx`), since the Sheets API can't read raw Excel files.
+2. Sharing must be set to **Anyone with the link: Viewer** (Share button, top right),
+   since this route uses a simple API key rather than full OAuth.
 
 ## Shopify feed — Admin API setup
 
 1. In Shopify Admin: **Settings → Apps and sales channels → Develop apps → Create an app**.
 2. Under **Configuration**, grant Admin API scopes: `read_orders`, `read_products`.
 3. Install the app and copy the **Admin API access token**.
-4. Set `SHOPIFY_STORE_DOMAIN` (e.g. `daru-eg.myshopify.com`) and
+4. Set `SHOPIFY_STORE_DOMAIN` (your `.myshopify.com` domain, not a custom domain) and
    `SHOPIFY_ADMIN_ACCESS_TOKEN` in your environment variables.
 
 The Shopify panel shows live revenue (last 50 orders), today's orders, average order
