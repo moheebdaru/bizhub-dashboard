@@ -498,7 +498,26 @@ export default function Dashboard() {
                   <MetricCard label="Revenue" value={fmtMoney(shopify.metrics.totalRevenue, shopify.shop.currency)} detail={`${shopify.metrics.totalOrders} recent orders`} icon="◉" tone="green" />
                   <MetricCard label="Today" value={fmtMoney(shopify.metrics.todaysRevenue, shopify.shop.currency)} detail={`${shopify.metrics.todaysOrderCount} orders today`} icon="▦" tone="blue" />
                   <MetricCard label="Avg order" value={fmtMoney(shopify.metrics.avgOrderValue, shopify.shop.currency)} detail="Average basket value" icon="◇" tone="purple" />
+                  <MetricCard label="Inventory value" value={fmtMoney(shopify.inventory?.totalValue, shopify.shop.currency)} detail={`${fmtInt(shopify.inventory?.totalUnits)} units on hand`} icon="▦" tone="gold" />
                 </div>
+
+                <div className="health-list" style={{ marginTop: 16 }}>
+                  <button type="button"><span className="dot success" />Fulfilled<strong>{shopify.fulfillmentCounts?.fulfilled ?? 0}</strong></button>
+                  <button type="button"><span className="dot warning" />Pending<strong>{shopify.fulfillmentCounts?.pending ?? 0}</strong></button>
+                  <button type="button"><span className="dot warning" />Partial<strong>{shopify.fulfillmentCounts?.partial ?? 0}</strong></button>
+                  <button type="button"><span className="dot danger" />Cancelled<strong>{shopify.fulfillmentCounts?.cancelled ?? 0}</strong></button>
+                </div>
+
+                {shopify.returns?.returnedOrderCount ? (
+                  <p className="panel-header compact" style={{ marginTop: 12, marginBottom: 0 }}>
+                    <span className="section-kicker">Returns</span>
+                    <span style={{ display: "block", marginTop: 4 }}>
+                      {shopify.returns.returnedOrderCount} order{shopify.returns.returnedOrderCount === 1 ? "" : "s"} refunded ·{" "}
+                      {fmtMoney(shopify.returns.totalRefunded, shopify.shop.currency)} total
+                    </span>
+                  </p>
+                ) : null}
+
                 {shopify.lowStock?.length ? (
                   <div className="activity-list" style={{ marginTop: 16 }}>
                     {shopify.lowStock.slice(0, 5).map((p) => (

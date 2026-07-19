@@ -1,5 +1,9 @@
 // app/api/shopify/route.js
 // This runs on the server — your Shopify access token is never exposed to the browser
+//
+// Requires an Admin API access token with these read scopes:
+//   read_orders, read_products, read_inventory, read_locations,
+//   read_fulfillments, read_returns
 
 const API_VERSION = "2024-10";
 
@@ -33,34 +37,60 @@ export async function GET() {
   }
 
   try {
-    const [shopData, ordersData, productsData] = await Promise.all([
+    const [shopData, ordersData, productsData, locationsData] = await Promise.all([
       shopifyFetch(domain, token, "shop.json"),
-      shopifyFetch(domain, token, "orders.json?status=any&limit=50&order=created_at desc"),
+      shopifyFetch(
+        domain,
+        token,
+        "orders.json?status=any&limit=50&order=created_at desc&fields=id,name,created_at,cancelled_at,total_price,financial_status,fulfillment_status,refunds"
+      ),
       shopifyFetch(domain, token, "products.json?limit=50"),
+      shopifyFetch(domain, token, "locations.json"),
     ]);
 
     const shop = shopData.shop || {};
     const orders = ordersData.orders || [];
     const products = productsData.products || [];
+    const locations = locationsData.locations || [];
 
     const currency = shop.currency || "USD";
 
-    const totalRevenue = orders.reduce((sum, o) => sum + (parseFloat(o.total_price) || 0), 0);
+    // --- Orders & revenue ---
+    const activeOrders = orders.filter((o) => !o.cancelled_at);
+    const totalRevenue = activeOrders.reduce((sum, o) => sum + (parseFloat(o.total_price) || 0), 0);
     const totalOrders = orders.length;
 
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todaysOrders = orders.filter((o) => new Date(o.created_at) >= startOfDay);
+    const todaysOrders = activeOrders.filter((o) => new Date(o.created_at) >= startOfDay);
     const todaysRevenue = todaysOrders.reduce((sum, o) => sum + (parseFloat(o.total_price) || 0), 0);
 
-    const fulfillmentCounts = orders.reduce(
-      (acc, o) => {
-        const status = o.fulfillment_status || "unfulfilled";
-        acc[status] = (acc[status] || 0) + 1;
-        return acc;
-      },
-      {}
-    );
+    // --- Fulfillment breakdown: fulfilled / partial / pending / cancelled ---
+    const fulfillmentCounts = { fulfilled: 0, partial: 0, pending: 0, cancelled: 0 };
+    orders.forEach((o) => {
+      if (o.cancelled_at) fulfillmentCounts.cancelled += 1;
+      else if (o.fulfillment_status === "fulfilled") fulfillmentCounts.fulfilled += 1;
+      else if (o.fulfillment_status === "partial") fulfillmentCounts.partial += 1;
+      else fulfillmentCounts.pending += 1;
+    });
+
+    // --- Returns / refunds ---
+    const ordersWithRefunds = orders.filter((o) => (o.refunds || []).length > 0);
+    const totalRefunded = ordersWithRefunds.reduce((sum, o) => {
+      const orderRefundTotal = (o.refunds || []).reduce((rSum, refund) => {
+        const txTotal = (refund.transactions || []).reduce((tSum, tx) => tSum + (parseFloat(tx.amount) || 0), 0);
+        return rSum + txTotal;
+      }, 0);
+      return sum + orderRefundTotal;
+    }, 0);
+
+    const returns = {
+      returnedOrderCount: ordersWithRefunds.length,
+      totalRefunded,
+    };
+
+    // --- Inventory & products breakdown ---
+    const locationNames = Object.fromEntries(locations.map((l) => [l.id, l.name]));
 
     const productSummaries = products.map((p) => {
       const variants = p.variants || [];
@@ -72,9 +102,13 @@ export async function GET() {
         status: p.status,
         price,
         inventory: totalInventory,
+        inventoryValue: totalInventory * price,
         variantCount: variants.length,
       };
     });
+
+    const totalInventoryUnits = productSummaries.reduce((sum, p) => sum + p.inventory, 0);
+    const totalInventoryValue = productSummaries.reduce((sum, p) => sum + p.inventoryValue, 0);
 
     const lowStock = productSummaries
       .filter((p) => p.inventory <= 10)
@@ -87,9 +121,16 @@ export async function GET() {
         totalOrders,
         todaysRevenue,
         todaysOrderCount: todaysOrders.length,
-        avgOrderValue: totalOrders ? totalRevenue / totalOrders : 0,
+        avgOrderValue: activeOrders.length ? totalRevenue / activeOrders.length : 0,
       },
       fulfillmentCounts,
+      returns,
+      inventory: {
+        totalUnits: totalInventoryUnits,
+        totalValue: totalInventoryValue,
+        locationCount: locations.length,
+        locationNames: Object.values(locationNames),
+      },
       products: productSummaries,
       lowStock,
     });
